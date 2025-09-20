@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: solspin-api
+    env: node
+    plan: free
+    region: oregon
+    autoDeploy: true
+    buildCommand: ""
+    startCommand: "node app/keeper.mjs"
+    envVars:
+      - key: NODE_VERSION
+        value: "18"
+      - key: API_PORT
+        value: "3000"
+    disk:
+      name: state
+      mountPath: /opt/render/project/src/app/state
+      sizeGB: 1

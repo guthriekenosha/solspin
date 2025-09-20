@@ -1,0 +1,10 @@
+# Environment configuration
+.env
+app/.env
+
+# Wallet / keypair files
+app/state/treasury.json
+app/state/test-ledger/
+*.keypair.json
+*wallet*.json
+*keypair*.json

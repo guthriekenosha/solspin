@@ -5,13 +5,33 @@ services:
     plan: free
     region: oregon
     autoDeploy: true
-    buildCommand: ""
-    startCommand: "node app/keeper.mjs"
+    buildCommand: "npm install --omit=dev"
+    startCommand: "npm run start"
     envVars:
       - key: NODE_VERSION
         value: "18"
       - key: API_PORT
         value: "3000"
+      - key: API_HOST
+        value: "0.0.0.0"
+      - key: RPC_URL
+        sync: false
+      - key: TREASURY_KEYPAIR
+        value: "/opt/render/project/src/app/state/treasury.json"
+      - key: TOKEN_MINT
+        sync: false
+      - key: USDC_MINT
+        sync: false
+      - key: TOKEN_TICKER
+        value: "YOUR"
+      - key: PAYOUT_AS
+        value: "USDC"
+      - key: SOL_PRICE_USD
+        value: "150"
+      - key: DEX_API_BASE
+        value: "https://public-api.birdeye.so"
+      - key: BIRDEYE_API_KEY
+        sync: false
     disk:
       name: state
       mountPath: /opt/render/project/src/app/state

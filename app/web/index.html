@@ -781,6 +781,20 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     }
 
+    /* Force long contract addresses to wrap nicely */
+    #tokenMint {
+      display: block;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      white-space: normal;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    @media (min-width: 900px) {
+      #tokenMint { font-size: 13px; }
+    }
+
     /* =========================
        FUN MECHANICS PALETTE
        ========================= */
@@ -910,6 +924,7 @@
             <div class="label">Market Cap</div>
             <div id="marketCapValue" class="value">—</div>
           </div>
+          <div id="mcHint" class="muted" style="font-size:12px;display:none;">Set <code>TOKEN_MINT</code> in <code>.env</code> to enable market cap.</div>
         </div>
         
       </div>
@@ -1037,8 +1052,23 @@
   <!-- FX canvas used by wheel.js -->
   <canvas id="fx" style="position:fixed; inset:0; width:100%; height:100%; pointer-events:none; z-index:999;"></canvas>
 
+</div>
   <!-- App logic -->
   <script src="./wheel.js"></script>
+  <script>
+    // If market cap hasn't been populated a moment after load, show a helpful hint
+    window.addEventListener('load', () => {
+      const val = document.getElementById('marketCapValue');
+      const hint = document.getElementById('mcHint');
+      if (val && hint) {
+        setTimeout(() => {
+          if (!val.textContent || val.textContent.trim() === '—' || val.textContent.trim() === '-') {
+            hint.style.display = 'block';
+          }
+        }, 1800);
+      }
+    });
+  </script>
 </body>
 
 </html>

@@ -3,7 +3,7 @@
 app/.env
 
 # Wallet / keypair files
-app/state/treasury.json
+app/utils/state/treasury.json
 *.keypair.json
 *wallet*.json
 *keypair*.json

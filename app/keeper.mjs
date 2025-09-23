@@ -89,39 +89,60 @@ function usdToSol(usd) {
     return usd / SOL_PRICE_USD;
 }
 
+// Helper: fetch JSON with timeout
+async function fetchJsonWithTimeout(url, opts = {}, timeoutMs = 4000) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+        const r = await fetch(url, { ...opts, signal: ctrl.signal });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return await r.json();
+    } finally {
+        clearTimeout(t);
+    }
+}
+
 // Live SOL/USD price (tries multiple sources, falls back to SOL_PRICE_USD)
-async function fetchSolPriceUsd() {
+async function fetchSolPriceObj() {
     // 1) Jupiter
     try {
-        const r = await fetch("https://price.jup.ag/v6/price?ids=SOL", { headers: { accept: "application/json" } });
-        if (r.ok) {
-            const j = await r.json();
-            const v = j?.data?.SOL?.price;
-            if (Number.isFinite(v) && v > 0) return v;
-        }
-    } catch { }
+        const j = await fetchJsonWithTimeout(
+            "https://price.jup.ag/v6/price?ids=SOL",
+            { headers: { accept: "application/json", "user-agent": "solspin/1.0" } },
+            3500
+        );
+        const v = j?.data?.SOL?.price;
+        if (Number.isFinite(v) && v > 0) return { price: v, source: "jupiter" };
+    } catch {}
     // 2) Birdeye (WSOL)
     try {
-        const beHeaders = { accept: "application/json" };
+        const beHeaders = { accept: "application/json", "user-agent": "solspin/1.0" };
         if (process.env.BIRDEYE_API_KEY) beHeaders["X-API-KEY"] = process.env.BIRDEYE_API_KEY;
-        const r = await fetch("https://public-api.birdeye.so/defi/price?address=So11111111111111111111111111111111111111112", { headers: beHeaders });
-        if (r.ok) {
-            const j = await r.json();
-            const v = j?.data?.value;
-            if (Number.isFinite(v) && v > 0) return v;
-        }
-    } catch { }
+        const j = await fetchJsonWithTimeout(
+            "https://public-api.birdeye.so/defi/price?address=So11111111111111111111111111111111111111112",
+            { headers: beHeaders },
+            3500
+        );
+        const v = j?.data?.value;
+        if (Number.isFinite(v) && v > 0) return { price: v, source: "birdeye" };
+    } catch {}
     // 3) CoinGecko
     try {
-        const r = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", { headers: { accept: "application/json" } });
-        if (r.ok) {
-            const j = await r.json();
-            const v = j?.solana?.usd;
-            if (Number.isFinite(v) && v > 0) return v;
-        }
-    } catch { }
-    // 4) Fallback
-    return SOL_PRICE_USD;
+        const j = await fetchJsonWithTimeout(
+            "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+            { headers: { accept: "application/json", "user-agent": "solspin/1.0" } },
+            3500
+        );
+        const v = j?.solana?.usd;
+        if (Number.isFinite(v) && v > 0) return { price: v, source: "coingecko" };
+    } catch {}
+    // 4) Fallback env
+    return { price: SOL_PRICE_USD, source: "fallback_env" };
+}
+
+async function fetchSolPriceUsd() {
+    const { price } = await fetchSolPriceObj();
+    return price;
 }
 
 async function paySol(conn, payer, toAddress, amountSol) {
@@ -465,6 +486,11 @@ async function startApi() {
         try {
             const url = new URL(req.url, `http://${req.headers.host}`);
             const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" };
+            if (url.pathname === "/" || url.pathname === "/index.html") {
+                res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...CORS });
+                res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${TOKEN_TICKER || "Wheel"} API</title><style>body{background:#050505;color:#f6f6f6;font-family:system-ui, sans-serif;margin:0;padding:40px;line-height:1.5;}a{color:#6cf;text-decoration:none;}code{background:#1a1a1a;padding:2px 4px;border-radius:4px;font-size:0.95em;}h1{margin-top:0;font-size:2rem;}ul{padding-left:20px;}li{margin-bottom:0.35rem;}</style></head><body><h1>${TOKEN_TICKER || "Wheel"} Treasury Service</h1><p>This service powers automated prize draws. Explore the available endpoints:</p><ul><li><code>/api/health</code> – draw cadence + activation status</li><li><code>/api/price</code> – cached price + FDV metrics</li><li><code>/api/treasury</code> – on-chain treasury balances</li><li><code>/api/verify?addr=...</code> – verify the latest draw outcome</li></ul><p>Need help? Check the repository README.</p></body></html>`);
+                return;
+            }
             if (url.pathname === "/healthz") {
                 res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
                 res.end("ok");
@@ -513,12 +539,14 @@ async function startApi() {
             }
             if (url.pathname === "/api/price") {
                 try {
-                    const solPriceUsd = await fetchSolPriceUsd().catch(() => null);
+                    const solObj = await fetchSolPriceObj().catch(() => ({ price: null, source: null }));
+                    const solPriceUsd = solObj.price;
                     const metrics = TOKEN_MINT ? await fetchTokenMetrics(TOKEN_MINT).catch(() => null) : null;
                     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store", ...CORS });
                     res.end(JSON.stringify({
                         ok: true,
                         solPriceUsd,
+                        solSource: solObj.source,
                         token: metrics ? {
                             priceUsd: metrics.priceUsd ?? null,
                             fdvUsd: metrics.fdvUsd ?? null,
@@ -549,8 +577,8 @@ async function startApi() {
             res.end(JSON.stringify({ ok: false, error: String(e) }));
         }
     });
-    server.listen(API_PORT, "0.0.0.0", () => {
-        console.log(`API listening on http://0.0.0.0:${API_PORT}`);
+    server.listen(API_PORT, API_HOST, () => {
+        console.log(`API listening on http://${API_HOST}:${API_PORT}`);
     });
 }
 

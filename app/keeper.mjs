@@ -29,8 +29,8 @@ const WEIGHT_MODE = (process.env.WALLET_WEIGHT_MODE || "balance").toLowerCase();
 const DYN_TIER_AMT = Number(process.env.DYNAMIC_TIER_AMOUNT || "1000");
 const DYN_TIER_CAP = Number(process.env.DYNAMIC_TIER_CAP || "5000000");
 
-const API_PORT = Number(process.env.PORT || process.env.API_PORT || "0"); // 0 disables the API
-const API_HOST = process.env.HOST || process.env.API_HOST || "0.0.0.0";
+const API_PORT = Number(process.env.PORT || process.env.API_PORT || "10000"); // Render defaults to 10000
+const API_HOST = "0.0.0.0"; // Always bind publicly for Render
 
 const PAYOUT_AS = (process.env.PAYOUT_AS || "USDC").toUpperCase(); // "USDC" or "SOL"
 const SOL_PRICE_USD = Number(process.env.SOL_PRICE_USD || "150");  // fallback for USD -> SOL
@@ -465,6 +465,11 @@ async function startApi() {
         try {
             const url = new URL(req.url, `http://${req.headers.host}`);
             const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" };
+            if (url.pathname === "/healthz") {
+                res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
+                res.end("ok");
+                return;
+            }
             if (url.pathname === "/api/verify") {
                 const addr = (url.searchParams.get("addr") || "").trim();
                 const draws = loadJson(DRAWS_PATH) || [];
@@ -544,8 +549,8 @@ async function startApi() {
             res.end(JSON.stringify({ ok: false, error: String(e) }));
         }
     });
-    server.listen(API_PORT, API_HOST, () => {
-        console.log(`API listening on http://${API_HOST}:${API_PORT}`);
+    server.listen(API_PORT, "0.0.0.0", () => {
+        console.log(`API listening on http://0.0.0.0:${API_PORT}`);
     });
 }
 

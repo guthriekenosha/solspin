@@ -1,5 +1,8 @@
 import dotenv from "dotenv";
 import crypto from "crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
 import { SystemProgram, Transaction, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 dotenv.config();
 
@@ -7,6 +10,15 @@ dotenv.config();
 if (typeof fetch === "undefined") {
     globalThis.fetch = (await import("node-fetch")).default;
 }
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const WEB_ROOT = path.join(__dirname, "web");
+const STATIC_MIME = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".png": "image/png"
+};
 
 import {
     getConn, getTreasury, getTokenBalanceForOwner,
@@ -29,8 +41,8 @@ const WEIGHT_MODE = (process.env.WALLET_WEIGHT_MODE || "balance").toLowerCase();
 const DYN_TIER_AMT = Number(process.env.DYNAMIC_TIER_AMOUNT || "1000");
 const DYN_TIER_CAP = Number(process.env.DYNAMIC_TIER_CAP || "5000000");
 
-const API_PORT = Number(process.env.PORT || process.env.API_PORT || "10000"); // Render defaults to 10000
-const API_HOST = "0.0.0.0"; // Always bind publicly for Render
+const API_PORT = Number(process.env.PORT || process.env.API_PORT || "0"); // 0 disables the API
+const API_HOST = process.env.HOST || process.env.API_HOST || "0.0.0.0";
 
 const PAYOUT_AS = (process.env.PAYOUT_AS || "USDC").toUpperCase(); // "USDC" or "SOL"
 const SOL_PRICE_USD = Number(process.env.SOL_PRICE_USD || "150");  // fallback for USD -> SOL
@@ -482,15 +494,38 @@ async function maybeRunTwoWheel() {
 async function startApi() {
     if (!API_PORT) return;
     const http = await import("http");
+    const serveStatic = async (req, res, pathname, cors) => {
+        if (req.method !== "GET" && req.method !== "HEAD") return false;
+        let rel = null;
+        if (pathname === "/" || pathname === "/index.html") rel = "index.html";
+        else if (pathname === "/wheel.js") rel = "wheel.js";
+        else if (pathname.startsWith("/assets/")) {
+            const rest = pathname.slice(8);
+            if (rest.includes("..")) return false;
+            rel = path.join("assets", rest);
+        }
+        if (!rel) return false;
+        const filePath = path.join(WEB_ROOT, rel);
+        try {
+            const buf = await readFile(filePath);
+            const ext = path.extname(filePath).toLowerCase();
+            const type = STATIC_MIME[ext] || "application/octet-stream";
+            res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-store", ...cors });
+            if (req.method === "HEAD") res.end(); else res.end(buf);
+            return true;
+        } catch (err) {
+            if (err?.code === "ENOENT") return false;
+            console.error("Static asset error", err);
+            res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8", ...cors });
+            res.end("Static asset error");
+            return true;
+        }
+    };
     const server = http.createServer(async (req, res) => {
         try {
             const url = new URL(req.url, `http://${req.headers.host}`);
             const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" };
-            if (url.pathname === "/" || url.pathname === "/index.html") {
-                res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...CORS });
-                res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${TOKEN_TICKER || "Wheel"} API</title><style>body{background:#050505;color:#f6f6f6;font-family:system-ui, sans-serif;margin:0;padding:40px;line-height:1.5;}a{color:#6cf;text-decoration:none;}code{background:#1a1a1a;padding:2px 4px;border-radius:4px;font-size:0.95em;}h1{margin-top:0;font-size:2rem;}ul{padding-left:20px;}li{margin-bottom:0.35rem;}</style></head><body><h1>${TOKEN_TICKER || "Wheel"} Treasury Service</h1><p>This service powers automated prize draws. Explore the available endpoints:</p><ul><li><code>/api/health</code> – draw cadence + activation status</li><li><code>/api/price</code> – cached price + FDV metrics</li><li><code>/api/treasury</code> – on-chain treasury balances</li><li><code>/api/verify?addr=...</code> – verify the latest draw outcome</li></ul><p>Need help? Check the repository README.</p></body></html>`);
-                return;
-            }
+            if (await serveStatic(req, res, url.pathname, CORS)) return;
             if (url.pathname === "/healthz") {
                 res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
                 res.end("ok");

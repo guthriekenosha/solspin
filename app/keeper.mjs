@@ -29,8 +29,8 @@ const WEIGHT_MODE = (process.env.WALLET_WEIGHT_MODE || "balance").toLowerCase();
 const DYN_TIER_AMT = Number(process.env.DYNAMIC_TIER_AMOUNT || "1000");
 const DYN_TIER_CAP = Number(process.env.DYNAMIC_TIER_CAP || "5000000");
 
-const API_PORT = Number(process.env.API_PORT || process.env.PORT || "0"); // 0 disables the API
-const API_HOST = process.env.API_HOST || "0.0.0.0";
+const API_PORT = Number(process.env.PORT || process.env.API_PORT || "0"); // 0 disables the API
+const API_HOST = process.env.HOST || process.env.API_HOST || "0.0.0.0";
 
 const PAYOUT_AS = (process.env.PAYOUT_AS || "USDC").toUpperCase(); // "USDC" or "SOL"
 const SOL_PRICE_USD = Number(process.env.SOL_PRICE_USD || "150");  // fallback for USD -> SOL

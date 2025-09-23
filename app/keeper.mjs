@@ -30,6 +30,7 @@ const MIN_BAL = Number(process.env.MIN_ELIGIBLE_BALANCE || "1");
 const START_CAP = Number(process.env.RECURRING_START_CAP || "1000000");
 const STOP_CAP = Number(process.env.RECURRING_STOP_CAP || "0");
 const REC_MS = Number(process.env.RECURRING_INTERVAL_MS || 60 * 60 * 1000);
+const DEMO_MS = Number(process.env.DEMO_INTERVAL_MS || 5 * 60 * 1000);
 const DEMO_BELOW_START = String(process.env.DEMO_BELOW_START || "1") !== "0"; // run demo (no payout) spins below START_CAP
 const WEIGHT_MODE = (process.env.WALLET_WEIGHT_MODE || "balance").toLowerCase(); // balance|equal
 
@@ -481,6 +482,10 @@ async function maybeRunTwoWheel() {
     const state = drawsState();
     const { fdvUsd } = await fetchTokenMetrics(TOKEN_MINT);
     const currentFdv = Number(fdvUsd) || 0;
+    // Use shorter interval while below START_CAP (demo mode)
+    const intervalMs = (currentFdv >= START_CAP || START_CAP === 0 || drawsState().recurringActive)
+        ? REC_MS
+        : DEMO_MS;
 
     // Deactivate if FDV falls below STOP_CAP (when configured)
     if (state.recurringActive && STOP_CAP > 0 && currentFdv > 0 && currentFdv < STOP_CAP) {
@@ -533,9 +538,10 @@ async function maybeRunTwoWheel() {
         }
     }
 
-    // interval guard
-    if (state.lastRecurringTs && now() - state.lastRecurringTs < REC_MS - 15_000) {
-        console.log("🕒 Two-wheel payout already sent recently.");
+    // interval guard (use demo interval below START_CAP)
+    if (state.lastRecurringTs && now() - state.lastRecurringTs < intervalMs - 15_000) {
+        const left = Math.max(0, (intervalMs - (now() - state.lastRecurringTs)) / 1000).toFixed(1);
+        console.log(`🕒 Draw throttled. Next window in ~${left}s (interval ${intervalMs/1000}s).`);
         return;
     }
 
@@ -821,10 +827,12 @@ function startRecurringLoop() {
     const computeDelay = () => {
         const state = drawsState();
         const lastTs = state.lastRecurringTs || 0;
-        const fallbackWindow = Math.min(REC_MS || 0, 60_000);
+        // If not yet active, prefer the shorter demo interval; otherwise use real interval
+        const interval = state.recurringActive ? REC_MS : Math.min(REC_MS, DEMO_MS);
+        const safeInterval = (interval && interval > 0) ? interval : REC_MS;
         const target = lastTs
-            ? (lastTs + REC_MS)
-            : (Date.now() + Math.max(MIN_DELAY_MS, fallbackWindow || MIN_DELAY_MS));
+            ? (lastTs + safeInterval)
+            : (Date.now() + Math.max(MIN_DELAY_MS, Math.min(safeInterval, 60_000)));
         const rawDelay = target - Date.now();
         return rawDelay <= MIN_DELAY_MS ? MIN_DELAY_MS : rawDelay;
     };

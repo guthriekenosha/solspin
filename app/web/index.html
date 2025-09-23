@@ -321,7 +321,7 @@
       border-radius: 999px;
       background: #10b981; /* emerald */
       box-shadow: 0 0 0 3px rgba(16, 185, 129, .28), 0 0 14px rgba(16,185,129,.55);
-      animation: liveFlicker 2.1s infinite steps(60, end), livePulse 1.6s ease-in-out infinite;
+      animation: liveFlicker 1.2s infinite, livePulse 1.4s ease-in-out infinite;
     }
     .status-pill .dot::after {
       content: "";
@@ -335,20 +335,20 @@
     }
 
     @keyframes liveFlicker {
-      0%   { opacity: .92; }
-      3%   { opacity: .55; }
-      6%   { opacity: .98; }
-      8%   { opacity: .4; }
-      11%  { opacity: 1; }
-      22%  { opacity: .85; }
-      28%  { opacity: .95; }
-      34%  { opacity: .6; }
-      39%  { opacity: 1; }
-      52%  { opacity: .74; }
-      66%  { opacity: .96; }
-      73%  { opacity: .5; }
-      81%  { opacity: .98; }
-      100% { opacity: .9; }
+      0%   { opacity: 1; }
+      5%   { opacity: .2; }
+      10%  { opacity: .95; }
+      15%  { opacity: .3; }
+      20%  { opacity: 1; }
+      25%  { opacity: .1; }
+      30%  { opacity: .9; }
+      40%  { opacity: .25; }
+      50%  { opacity: 1; }
+      60%  { opacity: .2; }
+      70%  { opacity: .95; }
+      80%  { opacity: .3; }
+      90%  { opacity: 1; }
+      100% { opacity: .15; }
     }
     @keyframes livePulse {
       0%,100% { transform: scale(1); box-shadow: 0 0 0 3px rgba(16,185,129,.28), 0 0 12px rgba(16,185,129,.5); }

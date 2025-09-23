@@ -924,7 +924,6 @@
             <div class="label">Market Cap</div>
             <div id="marketCapValue" class="value">—</div>
           </div>
-          <div id="mcHint" class="muted" style="font-size:12px;display:none;">Set <code>TOKEN_MINT</code> in <code>.env</code> to enable market cap.</div>
         </div>
         
       </div>
@@ -1055,20 +1054,6 @@
 </div>
   <!-- App logic -->
   <script src="./wheel.js"></script>
-  <script>
-    // If market cap hasn't been populated a moment after load, show a helpful hint
-    window.addEventListener('load', () => {
-      const val = document.getElementById('marketCapValue');
-      const hint = document.getElementById('mcHint');
-      if (val && hint) {
-        setTimeout(() => {
-          if (!val.textContent || val.textContent.trim() === '—' || val.textContent.trim() === '-') {
-            hint.style.display = 'block';
-          }
-        }, 1800);
-      }
-    });
-  </script>
 </body>
 
 </html>

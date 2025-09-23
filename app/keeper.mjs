@@ -30,6 +30,7 @@ const MIN_BAL = Number(process.env.MIN_ELIGIBLE_BALANCE || "1");
 const START_CAP = Number(process.env.RECURRING_START_CAP || "1000000");
 const STOP_CAP = Number(process.env.RECURRING_STOP_CAP || "0");
 const REC_MS = Number(process.env.RECURRING_INTERVAL_MS || 60 * 60 * 1000);
+const DEMO_BELOW_START = String(process.env.DEMO_BELOW_START || "1") !== "0"; // run demo (no payout) spins below START_CAP
 const WEIGHT_MODE = (process.env.WALLET_WEIGHT_MODE || "balance").toLowerCase(); // balance|equal
 
 const DYN_TIER_AMT = Number(process.env.DYNAMIC_TIER_AMOUNT || "1000");
@@ -81,7 +82,7 @@ function drawsState() {
             return last ? !!last.active : false;
         })(),
         lastRecurringTs: (() => {
-            const last = [...draws].reverse().find(d => d.kind === "recurring_two_wheel");
+            const last = [...draws].reverse().find(d => d.kind === "recurring_two_wheel" || d.kind === "demo_two_wheel");
             return last ? last.ts : 0;
         })(),
         tierAdded: draws.some(d => d.kind === "tier_added" && d.amount === DYN_TIER_AMT && d.cap === DYN_TIER_CAP)
@@ -501,6 +502,32 @@ async function maybeRunTwoWheel() {
                 state.recurringActive = true;
             } else {
                 console.log(`⏸ Recurring locked until fdv ≥ ${START_CAP.toLocaleString()} (current ${currentFdv.toLocaleString()}).`);
+                if (DEMO_BELOW_START) {
+                    // Run a demo (no payout) two-wheel to keep UI lively
+                    const conn = getConn();
+                    const registry = loadJson(REG_PATH) || [];
+                    const { addresses, weights } = await getEligibleWeighted(conn, registry);
+
+                    // If no eligible wallets, just log a demo with no winner
+                    let winner = null, winnerIdx = null;
+                    if (addresses.length) {
+                        const aliasTable = buildAlias(weights);
+                        const { rng } = await deriveSeedRng();
+                        winnerIdx = pickAlias(aliasTable, rng);
+                        winner = winnerIdx >= 0 ? addresses[winnerIdx] : null;
+                    }
+                    const amountUsd = Number(process.env.TEST_SPIN_USD || "10");
+                    appendDraw({
+                        ts: now(),
+                        kind: "demo_two_wheel",
+                        prize: { amountUsd, tiers: currentTiers(currentFdv, state.tierAdded), fdvUsd: currentFdv, demo: true },
+                        winner,
+                        winnerIndex: winnerIdx,
+                        weightMode: WEIGHT_MODE,
+                        rng: { seed: "demo", method: "sha256(blockhash|height|bucket)+xorshift32" },
+                        note: "demo_no_payout"
+                    });
+                }
                 return;
             }
         }

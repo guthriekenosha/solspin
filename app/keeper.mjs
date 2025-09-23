@@ -1,8 +1,5 @@
 import dotenv from "dotenv";
 import crypto from "crypto";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { readFile } from "node:fs/promises";
 import { SystemProgram, Transaction, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 dotenv.config();
 
@@ -11,14 +8,11 @@ if (typeof fetch === "undefined") {
     globalThis.fetch = (await import("node-fetch")).default;
 }
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(__dirname, "web");
-const STATIC_MIME = {
-    ".html": "text/html; charset=utf-8",
-    ".js": "text/javascript; charset=utf-8",
-    ".png": "image/png"
-};
 
 import {
     getConn, getTreasury, getTokenBalanceForOwner,
@@ -41,8 +35,8 @@ const WEIGHT_MODE = (process.env.WALLET_WEIGHT_MODE || "balance").toLowerCase();
 const DYN_TIER_AMT = Number(process.env.DYNAMIC_TIER_AMOUNT || "1000");
 const DYN_TIER_CAP = Number(process.env.DYNAMIC_TIER_CAP || "5000000");
 
-const API_PORT = Number(process.env.PORT || process.env.API_PORT || "0"); // 0 disables the API
-const API_HOST = process.env.HOST || process.env.API_HOST || "0.0.0.0";
+const API_PORT = Number(process.env.PORT || process.env.API_PORT || "10000"); // Render default
+const API_HOST = "0.0.0.0"; // bind publicly on Render
 
 const PAYOUT_AS = (process.env.PAYOUT_AS || "USDC").toUpperCase(); // "USDC" or "SOL"
 const SOL_PRICE_USD = Number(process.env.SOL_PRICE_USD || "150");  // fallback for USD -> SOL
@@ -494,43 +488,10 @@ async function maybeRunTwoWheel() {
 async function startApi() {
     if (!API_PORT) return;
     const http = await import("http");
-    const serveStatic = async (req, res, pathname, cors) => {
-        if (req.method !== "GET" && req.method !== "HEAD") return false;
-        let rel = null;
-        if (pathname === "/" || pathname === "/index.html") rel = "index.html";
-        else if (pathname === "/wheel.js") rel = "wheel.js";
-        else if (pathname.startsWith("/assets/")) {
-            const rest = pathname.slice(8);
-            if (rest.includes("..")) return false;
-            rel = path.join("assets", rest);
-        }
-        if (!rel) return false;
-        const filePath = path.join(WEB_ROOT, rel);
-        try {
-            const buf = await readFile(filePath);
-            const ext = path.extname(filePath).toLowerCase();
-            const type = STATIC_MIME[ext] || "application/octet-stream";
-            res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-store", ...cors });
-            if (req.method === "HEAD") res.end(); else res.end(buf);
-            return true;
-        } catch (err) {
-            if (err?.code === "ENOENT") return false;
-            console.error("Static asset error", err);
-            res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8", ...cors });
-            res.end("Static asset error");
-            return true;
-        }
-    };
     const server = http.createServer(async (req, res) => {
         try {
             const url = new URL(req.url, `http://${req.headers.host}`);
             const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" };
-            if (await serveStatic(req, res, url.pathname, CORS)) return;
-            if (url.pathname === "/healthz") {
-                res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
-                res.end("ok");
-                return;
-            }
             if (url.pathname === "/api/verify") {
                 const addr = (url.searchParams.get("addr") || "").trim();
                 const draws = loadJson(DRAWS_PATH) || [];
@@ -606,14 +567,52 @@ async function startApi() {
                 res.end(JSON.stringify({ ok: true, solLamports, sol: solLamports / LAMPORTS_PER_SOL, usdc }));
                 return;
             }
+            // --- Static site (serve /app/web) ---
+            try {
+                const rawPath = decodeURIComponent(url.pathname);
+                const cleanPath = rawPath.replace(/^\/+/, "");
+                const candidate = cleanPath === "" ? "index.html" : cleanPath;
+                const filePath = path.normalize(path.join(WEB_ROOT, candidate));
+                if (filePath.startsWith(WEB_ROOT) && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+                    const ext = path.extname(filePath).toLowerCase();
+                    const types = {
+                        ".html": "text/html; charset=utf-8",
+                        ".js":   "application/javascript; charset=utf-8",
+                        ".mjs":  "application/javascript; charset=utf-8",
+                        ".css":  "text/css; charset=utf-8",
+                        ".json": "application/json; charset=utf-8",
+                        ".png":  "image/png",
+                        ".jpg":  "image/jpeg",
+                        ".jpeg": "image/jpeg",
+                        ".gif":  "image/gif",
+                        ".svg":  "image/svg+xml",
+                        ".webp": "image/webp",
+                        ".ico":  "image/x-icon",
+                        ".txt":  "text/plain; charset=utf-8"
+                    };
+                    const type = types[ext] || "application/octet-stream";
+                    const cache = /(\.html|\.json)$/i.test(ext) ? "no-store" : "public, max-age=86400";
+                    res.writeHead(200, { "Content-Type": type, "Cache-Control": cache, ...CORS });
+                    fs.createReadStream(filePath).pipe(res);
+                    return;
+                }
+                if (!rawPath.startsWith("/api/")) {
+                    const indexPath = path.join(WEB_ROOT, "index.html");
+                    if (fs.existsSync(indexPath)) {
+                        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...CORS });
+                        fs.createReadStream(indexPath).pipe(res);
+                        return;
+                    }
+                }
+            } catch {}
             res.writeHead(404, { ...CORS }); res.end("Not Found");
         } catch (e) {
             res.writeHead(500, { "Content-Type": "application/json", ...CORS });
             res.end(JSON.stringify({ ok: false, error: String(e) }));
         }
     });
-    server.listen(API_PORT, API_HOST, () => {
-        console.log(`API listening on http://${API_HOST}:${API_PORT}`);
+    server.listen(API_PORT, "0.0.0.0", () => {
+        console.log(`API listening on http://0.0.0.0:${API_PORT}`);
     });
 }
 

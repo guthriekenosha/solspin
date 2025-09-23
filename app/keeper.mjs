@@ -18,7 +18,7 @@ import {
     getConn, getTreasury, getTokenBalanceForOwner,
     payUsdc, loadJson, saveJson
 } from "./utils/solana.mjs";
-import { fetchTokenMetrics } from "./utils/dexdata.mjs";
+// fetchTokenMetrics: local implementation below (replaces utils/dexdata.mjs)
 
 const TOKEN_MINT = process.env.TOKEN_MINT;
 const TOKEN_TICKER = process.env.TOKEN_TICKER || "YOUR";
@@ -122,10 +122,10 @@ async function fetchSolPriceObj() {
     } catch {}
     // 2) Birdeye (WSOL)
     try {
-        const beHeaders = { accept: "application/json", "user-agent": "solspin/1.0" };
+        const beHeaders = { accept: "application/json", "user-agent": "solspin/1.0", "x-chain": "solana" };
         if (process.env.BIRDEYE_API_KEY) beHeaders["X-API-KEY"] = process.env.BIRDEYE_API_KEY;
         const j = await fetchJsonWithTimeout(
-            "https://public-api.birdeye.so/defi/price?address=So11111111111111111111111111111111111111112",
+            "https://public-api.birdeye.so/defi/price?address=So11111111111111111111111111111111111111112&ui_amount_mode=raw",
             { headers: beHeaders },
             3500
         );
@@ -320,6 +320,76 @@ function currentTiers(fdvUsd, tierAddedFlag) {
     }
     const probs = new Array(amounts.length).fill(1 / amounts.length);
     return { amounts, probs };
+}
+
+// --- Token metrics helpers: price & FDV (local implementation) --------------
+async function rpcGet(body) {
+    const r = await fetch(process.env.RPC_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, ...body })
+    });
+    if (!r.ok) throw new Error(`rpc ${r.status}`);
+    return await r.json();
+}
+
+async function getMintSupply(mint) {
+    try {
+        const j = await rpcGet({ method: "getTokenSupply", params: [mint] });
+        const ui = j?.result?.value?.uiAmount;
+        return Number.isFinite(ui) ? ui : null;
+    } catch { return null; }
+}
+
+async function fetchTokenPrice(mint) {
+    // 1) Jupiter by mint id
+    try {
+        const j = await fetchJsonWithTimeout(
+            `https://price.jup.ag/v6/price?ids=${encodeURIComponent(mint)}`,
+            { headers: { accept: "application/json", "user-agent": "solspin/1.0" } },
+            3500
+        );
+        const v = j?.data?.[mint]?.price;
+        if (Number.isFinite(v) && v > 0) return { price: v, source: "jupiter" };
+    } catch {}
+    // 2) Birdeye (requires API key)
+    try {
+        if (process.env.BIRDEYE_API_KEY) {
+            const j = await fetchJsonWithTimeout(
+                `https://public-api.birdeye.so/defi/price?address=${encodeURIComponent(mint)}&ui_amount_mode=raw`,
+                { headers: { accept: "application/json", "X-API-KEY": process.env.BIRDEYE_API_KEY, "x-chain": "solana", "user-agent": "solspin/1.0" } },
+                4000
+            );
+            const v = j?.data?.value;
+            if (Number.isFinite(v) && v > 0) return { price: v, source: "birdeye" };
+        }
+    } catch {}
+    // 3) Dexscreener by token
+    try {
+        const j = await fetchJsonWithTimeout(
+            `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(mint)}`,
+            { headers: { accept: "application/json", "user-agent": "solspin/1.0" } },
+            3500
+        );
+        const pair = j?.pairs?.[0];
+        const v = Number(pair?.priceUsd);
+        if (Number.isFinite(v) && v > 0) return { price: v, source: `dexscreener:${pair?.dexId || 'pair'}` };
+    } catch {}
+    return { price: null, source: null };
+}
+
+async function fetchTokenMetrics(mint) {
+    try {
+        const [{ price, source }, supply] = await Promise.all([
+            fetchTokenPrice(mint),
+            getMintSupply(mint)
+        ]);
+        const priceUsd = Number.isFinite(price) ? price : null;
+        const fdvUsd = (priceUsd != null && Number.isFinite(supply)) ? priceUsd * supply : null;
+        return { priceUsd, fdvUsd, source: source || null };
+    } catch {
+        return { priceUsd: null, fdvUsd: null, source: null };
+    }
 }
 
 // ---------- milestone batches ----------

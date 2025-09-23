@@ -435,6 +435,23 @@
       flex: 0 0 auto;
     }
 
+    /* === HERO ROW FLEXBOX for panda + market cap === */
+    .hero-row {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      justify-content: flex-start; /* or space-between if you want them apart */
+    }
+
+    .hero-row .panda-hero {
+      flex: 0 0 120px; /* fixed size for panda */
+    }
+
+    .hero-row .marketcap-display,
+    .hero-row .market-cap-card {
+      flex: 1;
+    }
+
     .panda-hero {
       width: min(320px, 100%);
       aspect-ratio: 1 / 1; /* keep hero square so image doesn't drift */
@@ -1031,23 +1048,24 @@
             <div class="sub wordmark-sub">Hourly on-chain wheel • Verifiable randomness • Real USDC rewards on Solana</div>
           </div>
         </div>
+        <div class="hero-row">
+          <div class="panda-hero">
+            <img src="./assets/panda-wheel.png" alt="Smiling panda spinning the SoLSpin prize wheel surrounded by cash" loading="lazy" />
+          </div>
+          <div id="marketCapPanel" class="marketcap-display marquee market-cap-card" role="status" aria-live="polite">
+            <div class="label">Market Cap</div>
+            <div id="marketCapValue" class="value">—</div>
+          </div>
+        </div>
         <div class="status-row">
           <div class="status-pill" role="status" aria-live="polite">
             <span class="dot"></span>
             Live
           </div>
-          <div id="marketCapPanel" class="marketcap-display marquee" role="status" aria-live="polite">
-            <div class="label">Market Cap</div>
-            <div id="marketCapValue" class="value">—</div>
-          </div>
         </div>
         <div id="ticker" class="ticker" aria-live="polite">
           <div class="track">🎰 Now Spinning • Recent winners will appear here • Follow @SolSpin • Next draw soon…</div>
         </div>
-        
-      </div>
-      <div class="panda-hero">
-        <img src="./assets/panda-wheel.png" alt="Smiling panda spinning the SoLSpin prize wheel surrounded by cash" loading="lazy" />
       </div>
     </header>
 

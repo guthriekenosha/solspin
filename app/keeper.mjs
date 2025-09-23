@@ -322,7 +322,7 @@ function currentTiers(fdvUsd, tierAddedFlag) {
     return { amounts, probs };
 }
 
-// --- Token metrics helpers: price & FDV (local implementation) --------------
+// --- Token metrics helpers: price, FDV, and volume (local implementation) --------------
 async function rpcGet(body) {
     const r = await fetch(process.env.RPC_URL, {
         method: "POST",
@@ -378,17 +378,47 @@ async function fetchTokenPrice(mint) {
     return { price: null, source: null };
 }
 
+
+// Helper to fetch 24h USD volume for a token
+async function fetchTokenVolume24hUsd(mint) {
+    // Dexscreener first (USD volume when available)
+    try {
+        const j = await fetchJsonWithTimeout(
+            `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(mint)}`,
+            { headers: { accept: 'application/json', 'user-agent': 'solspin/1.0' } },
+            4000
+        );
+        const pair = j?.pairs?.[0];
+        const v = Number(pair?.volume24h ?? pair?.volume?.h24);
+        if (Number.isFinite(v) && v >= 0) return { vol24hUsd: v, source: `dexscreener:${pair?.dexId || 'pair'}` };
+    } catch {}
+    // Birdeye overview (requires API key)
+    try {
+        if (process.env.BIRDEYE_API_KEY) {
+            const j = await fetchJsonWithTimeout(
+                `https://public-api.birdeye.so/defi/token_overview?address=${encodeURIComponent(mint)}`,
+                { headers: { accept: 'application/json', 'X-API-KEY': process.env.BIRDEYE_API_KEY, 'x-chain': 'solana', 'user-agent': 'solspin/1.0' } },
+                4000
+            );
+            const v = Number(j?.data?.v24 ?? j?.data?.v24Usd ?? j?.data?.volume24h);
+            if (Number.isFinite(v) && v >= 0) return { vol24hUsd: v, source: 'birdeye' };
+        }
+    } catch {}
+    return { vol24hUsd: null, source: null };
+}
+
 async function fetchTokenMetrics(mint) {
     try {
-        const [{ price, source }, supply] = await Promise.all([
+        const [{ price, source }, supply, vol] = await Promise.all([
             fetchTokenPrice(mint),
-            getMintSupply(mint)
+            getMintSupply(mint),
+            fetchTokenVolume24hUsd(mint)
         ]);
         const priceUsd = Number.isFinite(price) ? price : null;
         const fdvUsd = (priceUsd != null && Number.isFinite(supply)) ? priceUsd * supply : null;
-        return { priceUsd, fdvUsd, source: source || null };
+        return { priceUsd, fdvUsd, source: source || null, volume24hUsd: vol.vol24hUsd };
     } catch {
-        return { priceUsd: null, fdvUsd: null, source: null };
+        return { priceUsd: null, fdvUsd: null, source: null, volume24hUsd: null };
     }
 }
 
@@ -616,6 +646,7 @@ async function startApi() {
                         token: metrics ? {
                             priceUsd: metrics.priceUsd ?? null,
                             fdvUsd: metrics.fdvUsd ?? null,
+                            volume24hUsd: metrics.volume24hUsd ?? null,
                             source: metrics.source ?? null
                         } : null
                     }));

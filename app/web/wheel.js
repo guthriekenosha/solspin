@@ -621,14 +621,45 @@
         if (amountIndex >= 0 && amountSliceCount) {
             const target = Math.min(Math.max(amountIndex, 0), amountSliceCount - 1);
             const rotor = amountWheel.__rotor || amountWheel;
+
+            // Schedule a "near-miss" shake for smaller wins to amp suspense
+            if (!(Number.isFinite(amountUsd) && amountUsd >= 500)) {
+                setTimeout(() => {
+                    if (window.solspinFX && typeof window.solspinFX.nearMiss === 'function') {
+                        window.solspinFX.nearMiss(amountWheel);
+                    }
+                }, Math.max(300, Math.floor(SPIN_DURATION_MS * 0.7)));
+            }
+
             spinToSlice(rotor, amountSliceCount, target, () => {
                 const picked = amountLabels[target] || `$${amountUsd}`;
                 if (amountResult) amountResult.textContent = `Selected: ${picked}`;
+
+                // Big-win effects: flash + coin rain (heavier for $1000)
+                if (Number.isFinite(amountUsd) && amountUsd >= 500) {
+                    const burst = amountUsd >= 1000 ? 36 : 22;
+                    const container = amountWheel.parentElement || amountWheel;
+                    if (window.solspinFX && typeof window.solspinFX.jackpotFlash === 'function') {
+                        window.solspinFX.jackpotFlash(container);
+                    }
+                    if (window.solspinFX && typeof window.solspinFX.coinRain === 'function') {
+                        window.solspinFX.coinRain(burst);
+                    }
+                }
+
                 startWalletSpin();
             });
         } else {
             if (amountResult) {
                 amountResult.textContent = amountUsd ? `Selected: $${amountUsd}` : "Selected: —";
+            }
+            // Even without an indexed slice, add a subtle near-miss for small wins
+            if (!(Number.isFinite(amountUsd) && amountUsd >= 500)) {
+                setTimeout(() => {
+                    if (window.solspinFX && typeof window.solspinFX.nearMiss === 'function') {
+                        window.solspinFX.nearMiss(amountWheel);
+                    }
+                }, 500);
             }
             startWalletSpin();
         }

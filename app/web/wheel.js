@@ -564,8 +564,8 @@
             : null;
         let message = `Wheels unlock at ${capText} market cap.`;
         if (fdvText) message += ` Current FDV: ${fdvText}.`;
-        setBanner(amountBanner, message);
-        setBanner(walletBanner, message);
+        setBanner(amountBanner, "");
+        setBanner(walletBanner, "");
         setBanner(activationNotice, message);
         renderMarketCap();
     }
